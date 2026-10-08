@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E501, W503
+exclude =
+    venv,
+    alembic,
+    .git,
+    __pycache__,
+    test-results,
+    .pytest_cache,
+    .coverage,
+    coverage.xml
+per-file-ignores =
+    tests/conftest.py: E402

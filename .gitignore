@@ -1,0 +1,21 @@
+# Python
+**/venv/
+__pycache__/
+*.pyc
+
+# База данных и артефакты тестирования
+backend/kanban.db
+.coverage
+coverage.xml
+coverage.json
+.pytest_cache/
+backend/test-results/
+*.log
+
+# Окружение и IDE
+.idea/
+.env
+.vscode/
+
+# WSL/системные
+nohup.out
