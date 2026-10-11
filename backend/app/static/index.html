@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban System (Full Requirements Covered)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; padding: 20px; }
+
+        .top-bar { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155; }
+        .nav-section { display: flex; align-items: center; gap: 10px; }
+
+        .filter-bar { display: flex; gap: 10px; background: #1e293b; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; align-items: center; flex-wrap: wrap; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #1e293b; padding: 25px; border-radius: 10px; width: 450px; border: 1px solid #475569; max-height: 90vh; overflow-y: auto; }
+        .modal-content h3 { margin-bottom: 15px; color: #38bdf8; font-size: 18px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+
+        input, select, textarea { width: 100%; background: #0f172a; border: 1px solid #475569; color: white; padding: 8px 12px; border-radius: 6px; outline: none; }
+        button { background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        button:hover { background: #0369a1; }
+        button.secondary { background: #475569; }
+        button.secondary:hover { background: #334155; }
+        button.danger { background: #991b1b; }
+        button.danger:hover { background: #7f1d1d; }
+
+        .board-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 15px; min-height: 65vh; }
+
+        .column { background: #1e293b; border-radius: 10px; width: 320px; min-width: 320px; padding: 15px; display: flex; flex-direction: column; border: 2px dashed transparent; }
+        .column.drag-over { border-color: #38bdf8; background: #26334d; }
+        .column-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #334155; font-weight: bold; }
+        .column-actions { display: flex; gap: 4px; }
+        .column-actions button { padding: 2px 6px; font-size: 10px; background: #334155; }
+
+        .wip-badge { font-size: 11px; padding: 2px 6px; border-radius: 10px; background: #334155; color: #94a3b8; }
+        .wip-badge.overload { background: #ef4444; color: white; }
+
+        .task-card { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px; border: 1px solid #334155; cursor: grab; }
+        .task-card:hover { border-color: #38bdf8; }
+        .task-title { font-weight: 600; margin-bottom: 6px; color: #f1f5f9; }
+        .task-meta { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .task-footer { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 8px; align-items: center; }
+
+        .tag { background: #334155; color: #38bdf8; padding: 2px 5px; border-radius: 4px; font-size: 10px; }
+        .attach-link { color: #38bdf8; font-size: 11px; text-decoration: none; display: inline-block; margin-top: 4px; }
+        .priority { padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; text-transform: uppercase; }
+        .priority.high { background: #7f1d1d; color: #fca5a5; }
+        .priority.medium { background: #78350f; color: #fde68a; }
+        .priority.low { background: #14532d; color: #86efac; }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="nav-section">
+            <h2 style="color: #38bdf8; font-size: 18px;">📋 Kanban Core</h2>
+            <select id="projectSelect" style="width: 180px;" onchange="loadBoard()"></select>
+            <button class="secondary" id="btnManageProj" onclick="openProjectManager()">⚙ Проекты</button>
+        </div>
+        <div class="nav-section" id="authNav">
+            <span id="userStatus" style="font-size: 13px; color: #94a3b8;">Статус: Гость</span>
+            <button id="btnLogin" onclick="showModal('loginModal')">🔑 Войти (JWT)</button>
+            <button id="btnReg" class="secondary" onclick="showModal('registerModal')">Регистрация</button>
+            <button id="btnLogout" class="danger" style="display:none;" onclick="handleLogout()">Выйти</button>
+        </div>
+    </div>
+
+    <div class="filter-bar">
+        <span style="font-size: 13px; font-weight: bold; color: #38bdf8;">🔍 Фильтры:</span>
+        <input type="text" id="searchInput" placeholder="Поиск по тексту..." style="width: 170px;" oninput="loadBoard()">
+        <input type="text" id="filterAssignee" placeholder="Исполнитель..." style="width: 130px;" oninput="loadBoard()">
+        <select id="filterPriority" style="width: 120px;" onchange="loadBoard()">
+            <option value="">Все приоритеты</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+        </select>
+        <input type="text" id="filterTag" placeholder="Метка..." style="width: 110px;" oninput="loadBoard()">
+    </div>
+
+    <!-- Board Header -->
+    <div class="board-header">
+        <h3>Доска задач</h3>
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="newColTitle" placeholder="Колонка..." style="width: 150px;">
+            <input type="number" id="newColWip" placeholder="WIP" value="3" style="width: 60px;">
+            <button onclick="openAddColumnModal()">+ Колонка</button>
+        </div>
+    </div>
+
+    <!-- Main Kanban Board -->
+    <div id="board" class="board"></div>
+
+    <!-- MODAL: LOGIN -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h3>Авторизация</h3>
+            <div class="form-group"><label>Имя пользователя</label><input type="text" id="loginUser" value="admin"></div>
+            <div class="form-group"><label>Пароль</label><input type="password" id="loginPass" value="admin"></div>
+            <button onclick="handleLogin()">Войти</button>
+            <button class="secondary" onclick="hideModal('loginModal')">Отмена</button>
+        </div>
+    </div>
+
+    <!-- MODAL: REGISTER -->
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <h3>Регистрация</h3>
+            <div class="form-group"><label>Имя пользователя</label><input type="text" id="regUser" placeholder="Имя"></div>
+            <div class="form-group"><label>Пароль</label><input type="password" id="regPass" placeholder="Пароль"></div>
+            <div class="form-group">
+                <label>Роль</label>
+                <select id="regRole">
+                    <option value="developer">Разработчик (Developer)</option>
+                    <option value="manager">Менеджер (Manager)</option>
+                </select>
+            </div>
+            <button onclick="handleRegister()">Зарегистрировать</button>
+            <button class="secondary" onclick="hideModal('registerModal')">Отмена</button>
+        </div>
+    </div>
+
+    <!-- MODAL: MANAGE PROJECTS -->
+    <div id="projectMgrModal" class="modal">
+        <div class="modal-content">
+            <h3>Управление проектами</h3>
+            <div id="projectsList" style="margin-bottom: 15px; font-size: 13px;"></div>
+            <hr style="border-color: #334155; margin-bottom: 15px;">
+            <div class="form-group"><label>Название нового проекта</label><input type="text" id="projTitle"></div>
+            <div class="form-group"><label>Описание</label><textarea id="projDesc" rows="2"></textarea></div>
+            <button onclick="handleCreateProject()">Создать проект</button>
+            <button class="secondary" onclick="hideModal('projectMgrModal')">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- MODAL: CREATE TASK -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <h3>Новая задача</h3>
+            <input type="hidden" id="targetColId">
+            <div class="form-group"><label>Название задачи</label><input type="text" id="taskTitleInput"></div>
+            <div class="form-group"><label>Описание</label><textarea id="taskDescInput" rows="2"></textarea></div>
+            <div class="form-group">
+                <label>Приоритет</label>
+                <select id="taskPrioritySelect">
+                    <option value="low">Low (Низкий)</option>
+                    <option value="medium" selected>Medium (Средний)</option>
+                    <option value="high">High (Высокий)</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Исполнитель</label><input type="text" id="taskAssigneeInput" placeholder="Валерия"></div>
+            <div class="form-group"><label>Дедлайн</label><input type="date" id="taskDeadlineInput"></div>
+            <div class="form-group"><label>Метки (через запятую)</label><input type="text" id="taskTagsInput" placeholder="backend, bug"></div>
+            <div class="form-group"><label>Ссылка на вложение / файл</label><input type="text" id="taskAttachInput" placeholder="https://..."></div>
+            <button onclick="handleCreateTask()">Создать</button>
+            <button class="secondary" onclick="hideModal('taskModal')">Отмена</button>
+        </div>
+    </div>
+
+    <!-- MODAL: TASK DETAILS & EDIT & HISTORY -->
+    <div id="taskDetailsModal" class="modal">
+        <div class="modal-content">
+            <h3 id="detTitle">Детали задачи</h3>
+            <div class="form-group"><label>Название</label><input type="text" id="detTitleInput"></div>
+            <div class="form-group"><label>Описание</label><textarea id="detDescInput" rows="2"></textarea></div>
+            <div class="form-group"><label>Исполнитель</label><input type="text" id="detAssigneeInput"></div>
+            <div class="form-group">
+                <label>Приоритет</label>
+                <select id="detPrioritySelect">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Ссылка на вложение</label><input type="text" id="detAttachInput"></div>
+
+            <button onclick="handleUpdateTask()" style="margin-bottom: 15px;">💾 Сохранить изменения</button>
+
+            <h4 style="font-size: 13px; color: #38bdf8; margin-bottom: 6px;">⏱ История изменений:</h4>
+            <div id="detHistory" style="background: #0f172a; padding: 8px; border-radius: 6px; font-size: 11px; max-height: 80px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #334155;"></div>
+
+            <h4 style="font-size: 13px; color: #38bdf8; margin-bottom: 6px;">💬 Комментарии:</h4>
+            <div id="detComments" style="background: #0f172a; padding: 8px; border-radius: 6px; font-size: 11px; max-height: 80px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #334155;"></div>
+
+            <div class="form-group">
+                <input type="text" id="commentInput" placeholder="Написать комментарий...">
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <button onclick="handleAddComment()">Отправить</button>
+                <div>
+                    <button class="danger" onclick="handleDeleteTask()">Удалить задачу</button>
+                    <button class="secondary" onclick="hideModal('taskDetailsModal')">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="columnModal" class="modal">
+    <div class="modal-content">
+        <h3 id="columnModalTitle">Добавить колонку</h3>
+
+        <!-- Скрытое поле ID (используется при редактировании) -->
+        <input type="hidden" id="editColumnId">
+
+        <div style="display: flex; flex-direction: column; gap: 6px; text-align: left;">
+            <label style="font-size: 12px; color: #94a3b8;">Название колонки:</label>
+            <input type="text" id="colTitleInput" placeholder="Например: В тестировании">
+
+            <label style="font-size: 12px; color: #94a3b8;">WIP-лимит (макс. задач):</label>
+            <input type="number" id="colWipInput" value="3" min="1">
+
+            <label style="font-size: 12px; color: #94a3b8;">Порядок отображения (Order):</label>
+            <input type="number" id="colOrderInput" value="1" min="1">
+        </div>
+
+        <div class="modal-actions" style="margin-top: 10px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" onclick="hideModal('columnModal')" style="background: #475569;">Отмена</button>
+            <button type="button" onclick="handleSaveColumn()" style="background: #2563eb; color: white;">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+
+    <script>
+        const API = '/api/v1';
+        let draggedTaskId = null;
+        let selectedTaskId = null;
+        let activeToken = localStorage.getItem('token') || null;
+        let currentUserRole = localStorage.getItem('role') || 'guest';
+        let currentUserName = localStorage.getItem('username') || 'Гость';
+
+        function showModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+        }
+
+        function authHeaders() {
+            return activeToken ? { 'Authorization': 'Bearer ' + activeToken } : {};
+        }
+
+        function jsonHeaders() {
+            return Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
+        }
+
+        function safeUrl(url) {
+            return /^(https?:)?\/\//i.test(url || '') ? url : '';
+        }
+
+        function errorDetail(data, fallback) {
+            if (data && data.detail) {
+                return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+            }
+            return fallback;
+        }
+
+        let columnsCache = [];
+
+        function updateAuthUI() {
+            if (activeToken) {
+                document.getElementById('userStatus').innerText = `👤 ${currentUserName} (${currentUserRole})`;
+                document.getElementById('userStatus').style.color = '#38bdf8';
+                document.getElementById('btnLogin').style.display = 'none';
+                document.getElementById('btnReg').style.display = 'none';
+                document.getElementById('btnLogout').style.display = 'inline-block';
+            } else {
+                document.getElementById('userStatus').innerText = 'Статус: Гость';
+                document.getElementById('userStatus').style.color = '#94a3b8';
+                document.getElementById('btnLogin').style.display = 'inline-block';
+                document.getElementById('btnReg').style.display = 'inline-block';
+                document.getElementById('btnLogout').style.display = 'none';
+            }
+        }
+
+        async function handleLogin() {
+            const username = document.getElementById('loginUser').value.trim();
+            const password = document.getElementById('loginPass').value.trim();
+            const res = await fetch(API + '/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.access_token) {
+                activeToken = data.access_token;
+                currentUserRole = data.role;
+                currentUserName = data.username;
+                localStorage.setItem('token', activeToken);
+                localStorage.setItem('role', currentUserRole);
+                localStorage.setItem('username', currentUserName);
+                updateAuthUI();
+                hideModal('loginModal');
+                loadProjects();
+            } else {
+                alert('🛑 ' + errorDetail(data, 'Не удалось войти'));
+            }
+        }
+
+        function handleLogout() {
+            localStorage.clear();
+            activeToken = null;
+            currentUserRole = 'guest';
+            currentUserName = 'Гость';
+            updateAuthUI();
+            loadBoard();
+        }
+
+        async function loadProjects() {
+            const res = await fetch(API + '/projects');
+            const projects = await res.json();
+            const select = document.getElementById('projectSelect');
+            select.innerHTML = projects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
+
+            const list = document.getElementById('projectsList');
+            list.innerHTML = projects.map(p => `
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px; background:#0f172a; padding:8px; border-radius:6px;">
+                    <div><b>${esc(p.title)}</b> <br><small style="color:#94a3b8;">${esc(p.description || '')}</small></div>
+                    ${currentUserRole === 'administrator' ? `<button class="danger" onclick="deleteProject(${p.id})">🗑</button>` : ''}
+                </div>
+            `).join('');
+            loadBoard();
+        }
+
+        function openProjectManager() {
+            loadProjects();
+            showModal('projectMgrModal');
+        }
+
+        async function handleCreateProject() {
+            const title = document.getElementById('projTitle').value.trim();
+            const description = document.getElementById('projDesc').value.trim();
+            const res = await fetch(API + '/projects', {
+                method: 'POST',
+                headers: jsonHeaders(),
+                body: JSON.stringify({ title, description })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                alert("🛑 Ошибка: " + (err.detail || "Нет прав!"));
+            } else {
+                document.getElementById('projTitle').value = '';
+                loadProjects();
+            }
+        }
+
+        async function deleteProject(id) {
+            if (!confirm("Удалить проект?")) return;
+            const res = await fetch(`${API}/projects/${id}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            if (!res.ok) alert("🛑 Недостаточно прав для удаления проекта!");
+            else loadProjects();
+        }
+
+        async function loadBoard() {
+    const selectedProjectId = document.getElementById('projectSelect').value;
+    const search = document.getElementById('searchInput').value;
+    const assignee = document.getElementById('filterAssignee').value;
+    const priority = document.getElementById('filterPriority').value;
+    const tag = document.getElementById('filterTag').value;
+
+    let query = `?`;
+    if (selectedProjectId) query += `project_id=${selectedProjectId}&`;
+    if (search) query += `search=${encodeURIComponent(search)}&`;
+    if (assignee) query += `assignee=${encodeURIComponent(assignee)}&`;
+    if (priority) query += `priority=${encodeURIComponent(priority)}&`;
+    if (tag) query += `tag=${encodeURIComponent(tag)}&`;
+
+    try {
+        let colsUrl = API + '/columns';
+        if (selectedProjectId) colsUrl += `?project_id=${encodeURIComponent(selectedProjectId)}`;
+        const colsRes = await fetch(colsUrl);
+        const cols = await colsRes.json();
+        const tasksRes = await fetch(API + '/tasks' + query);
+        const tasks = await tasksRes.json();
+
+        columnsCache = cols;
+
+        const board = document.getElementById('board');
+        board.innerHTML = '';
+
+        cols.forEach(col => {
+            const colTasks = tasks.filter(t => t.column_id === col.id);
+            const isOverload = colTasks.length >= col.wip_limit;
+
+            const colEl = document.createElement('div');
+            colEl.className = 'column';
+            colEl.setAttribute('data-col-id', col.id);
+
+            colEl.ondragover = (e) => { e.preventDefault(); colEl.classList.add('drag-over'); };
+            colEl.ondragleave = () => { colEl.classList.remove('drag-over'); };
+            colEl.ondrop = (e) => handleDrop(e, col.id);
+
+            let tasksHtml = '';
+            colTasks.forEach(t => {
+                const tagsList = t.tags ? t.tags.split(',').map(tag => `<span class="tag">${esc(tag.trim())}</span>`).join(' ') : '';
+                const url = safeUrl(t.attachment_url);
+                const attach = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="attach-link">📎 Вложение</a>` : '';
+
+                tasksHtml += `
+                    <div class="task-card" data-task-id="${t.id}" draggable="true" ondragstart="draggedTaskId=${t.id}" onclick="openTaskDetails(${t.id})">
+                        <div class="task-title">${esc(t.title)}</div>
+                        <div class="task-meta">
+                            <span>📅 ${esc(t.deadline || '—')}</span>
+                            <span>${tagsList}</span>
+                        </div>
+                        ${attach}
+                        <div class="task-footer">
+                            <span>👤 ${esc(t.assignee || '—')}</span>
+                            <span class="priority ${esc(t.priority)}">${esc(t.priority)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            const adminBtns = (currentUserRole === 'administrator' || currentUserRole === 'manager') ? `
+                <div class="column-actions">
+                    <button onclick="openEditColumn(${col.id})">✏️</button>
+                    <button onclick="deleteColumn(${col.id})">🗑</button>
+                </div>
+            ` : '';
+
+            colEl.innerHTML = `
+                <div class="column-header">
+                    <div>
+                        <span>${esc(col.title)}</span>
+                        <span class="wip-badge ${isOverload ? 'overload' : ''}">WIP: ${colTasks.length}/${col.wip_limit}</span>
+                    </div>
+                    ${adminBtns}
+                </div>
+                <div style="flex-grow: 1; min-height: 50px;">${tasksHtml}</div>
+                <button style="margin-top:10px; background: transparent; border: 1px dashed #475569;" onclick="openTaskModal(${col.id})">+ Добавить задачу</button>
+            `;
+            board.appendChild(colEl);
+        });
+    } catch (err) {
+        console.error("Ошибка сети:", err);
+    }
+}
+
+        function openAddColumnModal() {
+    document.getElementById('columnModalTitle').innerText = 'Добавить колонку';
+    document.getElementById('editColumnId').value = '';
+    document.getElementById('colTitleInput').value = '';
+    document.getElementById('colWipInput').value = '3';
+    document.getElementById('colOrderInput').value = '1';
+    const modal = document.getElementById('columnModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+
+        function openEditColumn(id) {
+    const col = columnsCache.find(c => c.id === id);
+    if (!col) return;
+    document.getElementById('columnModalTitle').innerText = 'Редактировать колонку';
+    document.getElementById('editColumnId').value = col.id;
+    document.getElementById('colTitleInput').value = col.title;
+    document.getElementById('colWipInput').value = col.wip_limit;
+    document.getElementById('colOrderInput').value = col.order;
+    showModal('columnModal');
+}
+
+
+        async function handleSaveColumn() {
+    const colId = document.getElementById('editColumnId').value;
+    const title = document.getElementById('colTitleInput').value.trim();
+    const wip = parseInt(document.getElementById('colWipInput').value) || 3;
+    const order = parseInt(document.getElementById('colOrderInput').value) || 1;
+
+    if (!title) {
+        alert("Введите название колонки!");
+        return;
+    }
+
+    const payload = { title: title, wip_limit: wip, order: order };
+    const isEdit = Boolean(colId);
+    if (!isEdit) {
+        const projSelect = document.getElementById('projectSelect');
+        if (projSelect && projSelect.value) payload.project_id = parseInt(projSelect.value);
+    }
+    const url = isEdit ? `${API}/columns/${colId}` : `${API}/columns`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    try {
+        const res = await fetch(url, {
+            method: method,
+            headers: jsonHeaders(),
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            hideModal('columnModal');
+            loadBoard();
+        } else {
+            // Безопасное чтение ответа сервера
+            const errorText = await res.text();
+            console.error("Сервер вернул ошибку:", errorText);
+            alert("🛑 Ошибка сервера: " + errorText);
+        }
+    } catch (e) {
+        console.error("Сетевая ошибка:", e);
+        alert("Ошибка подключения к серверу!");
+    }
+}
+
+        async function deleteColumn(id) {
+            if (!confirm("Удалить колонку и все её задачи?")) return;
+            const res = await fetch(`${API}/columns/${id}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            if (!res.ok) alert("🛑 Ошибка: Недостаточно прав!");
+            else loadBoard();
+        }
+
+        async function handleDrop(e, targetColId) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            if (!draggedTaskId) return;
+
+            const res = await fetch(`${API}/tasks/${draggedTaskId}/move?target_column_id=${targetColId}`, {
+                method: 'PUT',
+                headers: authHeaders()
+            });
+            draggedTaskId = null;
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert("🛑 Ошибка: " + errorDetail(err, "Не удалось переместить задачу"));
+            } else loadBoard();
+        }
+
+        function openTaskModal(colId) {
+            document.getElementById('targetColId').value = colId;
+            showModal('taskModal');
+        }
+
+        async function handleCreateTask() {
+    const colId = parseInt(document.getElementById('targetColId').value);
+    const projSelect = document.getElementById('projectSelect');
+    const projectId = projSelect ? (parseInt(projSelect.value) || 1) : 1;
+
+    const title = document.getElementById('taskTitleInput').value.trim();
+    const description = document.getElementById('taskDescInput').value.trim();
+    const priority = document.getElementById('taskPrioritySelect').value;
+    const assignee = document.getElementById('taskAssigneeInput').value.trim();
+    const deadline = document.getElementById('taskDeadlineInput').value;
+    const tags = document.getElementById('taskTagsInput').value.trim();
+    const attachment_url = document.getElementById('taskAttachInput').value.trim();
+
+    if (!title) {
+        alert("Введите название задачи!");
+        return;
+    }
+
+    const payload = {
+        title: title,
+        column_id: colId,
+        project_id: projectId,
+        description: description,
+        priority: priority,
+        assignee: assignee,
+        deadline: deadline,
+        tags: tags,
+        attachment_url: attachment_url
+    };
+
+    try {
+        const res = await fetch(API + '/tasks', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            console.error("Ошибка от сервера:", data);
+            alert("🛑 Ошибка: " + errorDetail(data, "Не удалось создать задачу"));
+        } else {
+            hideModal('taskModal');
+            document.getElementById('taskTitleInput').value = '';
+            document.getElementById('taskDescInput').value = '';
+            document.getElementById('taskAssigneeInput').value = '';
+            document.getElementById('taskDeadlineInput').value = '';
+            document.getElementById('taskTagsInput').value = '';
+            document.getElementById('taskAttachInput').value = '';
+
+            loadBoard();
+        }
+    } catch (e) {
+        console.error("Сетевая ошибка:", e);
+        alert("Ошибка подключения к серверу!");
+    }
+}
+
+
+        async function openTaskDetails(id) {
+            selectedTaskId = id;
+            const tasksRes = await fetch(API + '/tasks');
+            const tasks = await tasksRes.json();
+            const t = tasks.find(item => item.id === id);
+
+            if (t) {
+                document.getElementById('detTitleInput').value = t.title;
+                document.getElementById('detDescInput').value = t.description || '';
+                document.getElementById('detAssigneeInput').value = t.assignee || '';
+                document.getElementById('detPrioritySelect').value = t.priority || 'medium';
+                document.getElementById('detAttachInput').value = t.attachment_url || '';
+            }
+
+            const hRes = await fetch(`${API}/tasks/${id}/history`);
+            const history = await hRes.json();
+            document.getElementById('detHistory').innerHTML = history.map(h => `<div>⏱ ${esc(h.timestamp)} — ${esc(h.action)}</div>`).join('') || '<div>Пока пусто</div>';
+
+            const cRes = await fetch(`${API}/tasks/${id}/comments`);
+            const comments = await cRes.json();
+            document.getElementById('detComments').innerHTML = comments.map(c => `<div><b>${esc(c.author)}:</b> ${esc(c.text)}</div>`).join('') || '<div>Пока пусто</div>';
+
+            showModal('taskDetailsModal');
+        }
+
+        async function handleUpdateTask() {
+            const title = document.getElementById('detTitleInput').value.trim();
+            const description = document.getElementById('detDescInput').value.trim();
+            const assignee = document.getElementById('detAssigneeInput').value.trim();
+            const priority = document.getElementById('detPrioritySelect').value;
+            const attachment_url = document.getElementById('detAttachInput').value.trim();
+
+            await fetch(`${API}/tasks/${selectedTaskId}`, {
+                method: 'PUT',
+                headers: jsonHeaders(),
+                body: JSON.stringify({ title, description, assignee, priority, attachment_url })
+            });
+
+            hideModal('taskDetailsModal');
+            loadBoard();
+        }
+
+        async function handleAddComment() {
+            const text = document.getElementById('commentInput').value.trim();
+            if (!text) return;
+            await fetch(`${API}/tasks/${selectedTaskId}/comments`, {
+                method: 'POST',
+                headers: jsonHeaders(),
+                body: JSON.stringify({ text, author: currentUserName })
+            });
+            document.getElementById('commentInput').value = '';
+            openTaskDetails(selectedTaskId);
+        }
+
+        async function handleDeleteTask() {
+            if (!confirm("Удалить задачу?")) return;
+            await fetch(`${API}/tasks/${selectedTaskId}`, { method: 'DELETE', headers: authHeaders() });
+            hideModal('taskDetailsModal');
+            loadBoard();
+        }
+
+        async function handleRegister() {
+            const username = document.getElementById('regUser').value.trim();
+            const password = document.getElementById('regPass').value;
+            const role = document.getElementById('regRole').value;
+            if (!username || !password) {
+                alert('Введите имя пользователя и пароль!');
+                return;
+            }
+            const res = await fetch(API + '/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, role })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('🛑 ' + errorDetail(data, 'Ошибка регистрации'));
+                return;
+            }
+            alert(`Пользователь ${username} зарегистрирован! Теперь войдите.`);
+            document.getElementById('regUser').value = '';
+            document.getElementById('regPass').value = '';
+            hideModal('registerModal');
+        }
+
+        updateAuthUI();
+        loadProjects();
+    </script>
+</body>
+</html>
